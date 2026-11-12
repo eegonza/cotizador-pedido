@@ -101,8 +101,25 @@ test('Login por usuario, cálculo existente y guardado automático del cliente',
   await expect(page.locator('#toast')).toHaveText('Información guardada correctamente.');
   await expect(page.locator('#toast')).toBeVisible();
   await expect(page.locator('[data-view="users"]')).toBeHidden();
-  await expect(page.locator('.app-watermark')).toContainText('Erick Gonzalez'); expect(f.errors).toEqual([]);
+  await expect(page.locator('.app-watermark')).toContainText('eegonza'); expect(f.errors).toEqual([]);
   await page.screenshot({ path: test.info().outputPath('cotizador-escritorio.png'), fullPage: true });
+});
+test('Entrar con el teclado usa POST a Auth y conserva una URL sin credenciales', async ({ page }) => {
+  const f = await fixture(page); const requests = [];
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname === '/auth/v1/token') requests.push({ method: request.method(),
+      hasCredentialQuery: url.searchParams.has('username') || url.searchParams.has('password') });
+  });
+  await page.goto('/?campana=prueba#inicio');
+  await expect(page.locator('#login-submit')).toBeEnabled();
+  await page.locator('#login-username').fill('seller');
+  await page.locator('#login-password').fill('fixture-password-123');
+  await page.locator('#login-password').press('Enter');
+  await expect(page.locator('#quote-view')).toBeVisible();
+  expect(new URL(page.url()).search).toBe('?campana=prueba');
+  expect(requests).toEqual([{ method: 'POST', hasCredentialQuery: false }]);
+  expect(f.errors).toEqual([]);
 });
 test('Historial persiste al recargar y sus importes conservan el cambio original', async ({ page }) => {
   const f = await fixture(page); await login(page); await quote(page);

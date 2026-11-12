@@ -429,4 +429,7 @@ if (!api.configured) {
   });
   run(async () => { const data = await api.result(api.supabase.auth.getSession()); await activateSession(data.session); if (!data.session) status('login-status', 'Introduce tus credenciales para continuar.'); });
   setInterval(() => run(checkProfile), 30000);
+  for (const id of ['login-username', 'login-password', 'login-submit']) $(id).disabled = false;
 }
+// Solo se habilita el acceso después de registrar los manejadores de los formularios.
+document.documentElement.setAttribute('data-app-ready', 'true');

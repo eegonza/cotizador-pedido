@@ -27,6 +27,16 @@ npm run build
 npm run preview
 ```
 
+## Protección del acceso
+
+El formulario de acceso permanece deshabilitado hasta que la aplicación registra sus manejadores. Si el módulo no carga o falla durante el arranque, se muestra un aviso para recargar y no se habilita la entrada de credenciales. La autenticación normal usa POST a Supabase Auth; nunca una navegación del formulario.
+
+Los formularios de acceso, creación y restablecimiento de contraseña declaran POST. La política CSP `form-action 'none'` bloquea cualquier envío nativo, incluso `form.submit()`. Los campos del acceso no llevan nombres serializables. `public/form-safety.js` se ejecuta independientemente del módulo principal, cancela los envíos nativos y limpia parámetros de credenciales de URLs antiguas. Vite copia ese archivo a `dist` y ajusta su ruta para `/cotizador-pedido/`.
+
+La página declara `no-referrer`; desarrollo y preview lo añaden también como cabecera HTTP. Esto evita reenviar una URL con credenciales como Referer al cargar recursos. Limpiar la barra de direcciones no elimina una petición inicial ya recibida por el servidor ni los registros históricos: una contraseña que haya aparecido en una URL debe restablecerse y su entrada debe eliminarse del historial del navegador.
+
+Esta protección se publica con la interfaz. No necesita migraciones SQL adicionales ni cambios en las Edge Functions.
+
 ## Funciones
 
 - Acceso por nombre de usuario y contraseña; cuentas creadas solo por administradores.
@@ -36,7 +46,7 @@ npm run preview
 - Historial con cambio e importes originales, productos, exenciones, cliente, peso, envío y estado.
 - Búsquedas por cliente, usuario y número, filtros de fechas/estado, orden, paginación y CSV.
 - Auditoría protegida con valores anteriores y nuevos; fechas y horas de Panamá.
-- Footer discreto: © año automático Erick Gonzalez · Todos los derechos reservados.
+- Footer centrado al final del cotizador, con el año automático y los créditos de creación.
 
 Los permisos se comprueban en PostgreSQL y la función de servidor, no solo en la interfaz. Desactivar una cuenta bloquea las operaciones incluso con una sesión antigua.
 

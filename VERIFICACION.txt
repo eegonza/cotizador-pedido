@@ -91,3 +91,24 @@ VERIFICACIÓN DE DESCUENTOS Y RESPONSIVE — 2026-11-12
 - Capturas de móvil, tableta y escritorio generadas en test-results/ (ignorado por Git) e inspección visual del resumen móvil.
 - Límites: SQL ejecutado localmente en PGlite; las pruebas de navegador usan el servicio de prueba controlado. No se aplicó la migración al proyecto remoto ni se publicaron cambios.
 - Antes de publicar: aplicar supabase/migrations/202611120001_descuentos_productos.sql en el proyecto correcto y después desplegar la interfaz.
+
+
+VERIFICACIÓN DE CREDENCIALES FUERA DE LA URL — 2026-11-12
+- Se reprodujo el envío GET del formulario anterior al bloquear el módulo principal, usando exclusivamente marcadores ficticios e interceptando la navegación antes de enviarla al servidor.
+- npm test: 34 aprobadas, 0 fallidas u omitidas.
+- PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:ui: 38 aprobadas, 0 fallidas u omitidas. Incluye ocho pruebas de seguridad y el acceso normal mediante Enter/POST.
+- Casos: módulo ausente, fallo de inicialización inyectado, JavaScript deshabilitado, ambos scripts bloqueados, form.submit() en los tres formularios de credenciales, limpieza de parámetros duplicados y de distinto uso de mayúsculas, y ausencia de Referer con credenciales.
+- El TypeError de crypto.randomUUID del caso de inicialización se provoca deliberadamente para verificar el bloqueo seguro; no corresponde a un fallo inesperado de la suite.
+- npm run check:functions y compilación Vite con configuración pública ficticia: aprobadas.
+- Prueba adicional del dist real servido bajo /cotizador-pedido/: script independiente disponible con HTTP 200, URL heredada limpiada, acceso por POST sin parámetros de credenciales, envío nativo bloqueado y acceso deshabilitado con el bundle bloqueado.
+- La limpieza del historial actual no elimina registros anteriores ni revierte el primer acceso a una URL ya contaminada. Las contraseñas que aparecieron deben restablecerse.
+- Sin cambios de esquema, claves de servidor ni Edge Functions. No se utilizaron contraseñas reales en las pruebas.
+- Tras integrar el cambio remoto de los créditos, se mantuvo el pie de página del propietario y se ajustó la expectativa de esa prueba; los otros 37 casos de navegador aprobaron sobre esa versión combinada.
+- El caso de acceso y créditos se volvió a ejecutar de forma individual: 1 aprobada, 0 fallidas; con ello quedan comprobados los 38 casos de navegador sobre los cambios finales.
+
+
+AJUSTE DE UBICACIÓN DEL FOOTER — 2026-11-12
+- Se conserva el texto del propietario y se mueve el footer fuera de la columna del resumen, debajo de ambas columnas, ocupando el ancho del cotizador.
+- 9 pruebas de navegador aprobadas: acceso y diseño a 360, 375, 390, 414, 430, 768, 1024 y 1440 px. Compilación Vite y git diff --check aprobados.
+- Verificación geométrica adicional del dist a 360, 390, 768 y 1440 px: bloque y texto centrados en la ventana, posición debajo de las columnas, sin desbordamiento ni cobertura por la barra móvil al final de la página.
+- Capturas del footer en /tmp/footer-centrado-390.png y /tmp/footer-centrado-1440.png.
