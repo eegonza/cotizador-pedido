@@ -46,7 +46,7 @@ Esta protección se publica con la interfaz. No necesita migraciones SQL adicion
 - Historial con cambio e importes originales, productos, exenciones, cliente, peso, envío y estado.
 - Búsquedas por cliente, usuario y número, filtros de fechas/estado, orden, paginación y CSV.
 - Auditoría protegida con valores anteriores y nuevos; fechas y horas de Panamá.
-- Footer discreto: © año automático Erick Gonzalez · Todos los derechos reservados.
+- Footer centrado al final del cotizador, con el año automático y los créditos de creación.
 
 Los permisos se comprueban en PostgreSQL y la función de servidor, no solo en la interfaz. Desactivar una cuenta bloquea las operaciones incluso con una sesión antigua.
 

@@ -105,3 +105,10 @@ VERIFICACIÓN DE CREDENCIALES FUERA DE LA URL — 2026-11-12
 - Sin cambios de esquema, claves de servidor ni Edge Functions. No se utilizaron contraseñas reales en las pruebas.
 - Tras integrar el cambio remoto de los créditos, se mantuvo el pie de página del propietario y se ajustó la expectativa de esa prueba; los otros 37 casos de navegador aprobaron sobre esa versión combinada.
 - El caso de acceso y créditos se volvió a ejecutar de forma individual: 1 aprobada, 0 fallidas; con ello quedan comprobados los 38 casos de navegador sobre los cambios finales.
+
+
+AJUSTE DE UBICACIÓN DEL FOOTER — 2026-11-12
+- Se conserva el texto del propietario y se mueve el footer fuera de la columna del resumen, debajo de ambas columnas, ocupando el ancho del cotizador.
+- 9 pruebas de navegador aprobadas: acceso y diseño a 360, 375, 390, 414, 430, 768, 1024 y 1440 px. Compilación Vite y git diff --check aprobados.
+- Verificación geométrica adicional del dist a 360, 390, 768 y 1440 px: bloque y texto centrados en la ventana, posición debajo de las columnas, sin desbordamiento ni cobertura por la barra móvil al final de la página.
+- Capturas del footer en /tmp/footer-centrado-390.png y /tmp/footer-centrado-1440.png.
