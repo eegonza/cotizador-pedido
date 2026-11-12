@@ -77,3 +77,17 @@ NO COMPROBADO: acceso, almacenamiento, RLS y administración contra ese proyecto
 NO PUBLICADO: este build no se ha desplegado en GitHub Pages; primero completa la configuración y sigue el paso 13 de la guía.
 El entorno restringe destinos externos: para verificación remota necesita permitir el dominio del proyecto y, para Pages, api.github.com y megaregalon72-bot.github.io.
 El servicio de configuración informó que el borrador del entorno no está disponible; no pudo persistir install_script/start_skill ni requisitos de variables. La guía conserva las instrucciones de instalación y arranque.
+
+
+VERIFICACIÓN DE DESCUENTOS Y RESPONSIVE — 2026-11-12
+- npm test: 34 pruebas aprobadas, 0 fallidas, 0 omitidas. Incluye lógica monetaria, SQL/RLS, compatibilidad, históricos y CSV.
+- npm run check:functions: aprobado.
+- VITE_SUPABASE_URL=https://dmrgbwimauiwawyxpmvp.supabase.co npm run build: aprobado.
+- PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:ui: 29 pruebas aprobadas, 0 fallidas, 0 omitidas.
+- Navegador: 360, 375, 390, 414, 430, 768, 1024 y 1440 px; tarjetas, tablas de historial y detalle sin desbordamiento horizontal; controles con áreas táctiles de al menos 44 px.
+- Ejemplo: $20.00 × 2 con 10 % = $36.00; más $15.00 sin descuento = $51.00 en productos. El envío existente se suma por bulto.
+- Guardado, recuperación, edición y copia de descuentos porcentuales/fijos; centavos y límites; reintentos, clics duplicados y botón desactivado incluso al editar datos durante una petición.
+- Comprobación previa de compatibilidad: un servidor sin la migración no recibe guardados que ignorarían los descuentos.
+- Capturas de móvil, tableta y escritorio generadas en test-results/ (ignorado por Git) e inspección visual del resumen móvil.
+- Límites: SQL ejecutado localmente en PGlite; las pruebas de navegador usan el servicio de prueba controlado. No se aplicó la migración al proyecto remoto ni se publicaron cambios.
+- Antes de publicar: aplicar supabase/migrations/202611120001_descuentos_productos.sql en el proyecto correcto y después desplegar la interfaz.

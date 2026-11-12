@@ -26,12 +26,12 @@ export function csvCell(value) {
   return '"' + text.replaceAll('"', '""') + '"';
 }
 export function quotesCsv(rows) {
-  const header = ['ID', 'Usuario', 'Cliente', 'Fecha (Panamá)', 'Hora (Panamá)', 'Productos', 'Subtotal USD', 'Envío USD', 'Total USD', 'Total CRC', 'Estado', 'CRC por USD'];
+  const header = ['ID', 'Usuario', 'Cliente', 'Fecha (Panamá)', 'Hora (Panamá)', 'Productos', 'Subtotal original USD', 'Descuentos USD', 'Subtotal USD', 'Envío USD', 'Total USD', 'Total CRC', 'Estado', 'CRC por USD'];
   return '\ufeff' + [header, ...rows.map(q => {
     const when = dateAndTime(q.created_at); const s = q.snapshot;
     return [q.number, q.username, q.customer_name, when.date, when.time, s.product_count,
-      money(s.subtotal_cents), money(s.shipping_cents), money(s.total_usd_cents), money(s.total_crc_cents, '₡', false),
-      q.status, money(s.exchange_rate_cents, '₡', false)];
+      money(s.original_subtotal_cents ?? s.subtotal_cents), money(s.discount_cents ?? '0'), money(s.subtotal_cents), money(s.shipping_cents), money(s.total_usd_cents), money(s.total_crc_cents, '₡'),
+      q.status, money(s.exchange_rate_cents, '₡')];
   })].map(row => row.map(csvCell).join(',')).join('\r\n');
 }
 export function validateCustomer(value) {

@@ -26,7 +26,7 @@ function formatAmount(cents, symbol, alwaysDecimals) {
 }
 function usd(cents) { return formatAmount(cents, "$", true); }
 function crc(cents, rateCents = exchangeRateCents) {
-  return rateCents === null ? "—" : formatAmount(roundDivide(cents * rateCents, 100n), "₡", false);
+  return rateCents === null ? "—" : formatAmount(roundDivide(cents * rateCents, 100n), "₡", true);
 }
 function quoteTotalCrc(subtotalCents, shippingCrcCents, rateCents = exchangeRateCents) {
   return rateCents === null ? null : roundDivide(subtotalCents * rateCents, 100n) + shippingCrcCents;
@@ -53,6 +53,17 @@ function parseQuantity(raw) {
   const quantity = BigInt(value);
   if (quantity < 1n || quantity > LIMITS.quantity) return { value: null, error: "Usa una cantidad entera de 1 a 9,999." };
   return { value: quantity, error: "" };
+}
+function parseDiscount(raw, type, subtotalCents = null) {
+  if (!["percent", "fixed"].includes(type)) return { value: null, cents: 0n, error: "Selecciona porcentaje o monto fijo." };
+  const parsed = parseDecimal(raw, 2, type === "percent" ? 10000n : LIMITS.priceCents * LIMITS.quantity,
+    type === "percent" ? "Usa un descuento de 0 a 100 %, con máximo 2 decimales." : "Usa un descuento no negativo en USD, con máximo 2 decimales.");
+  if (parsed.error) return { value: null, cents: 0n, error: parsed.error };
+  const value = parsed.value ?? 0n;
+  if (type === "fixed" && subtotalCents !== null && value > subtotalCents) {
+    return { value: null, cents: 0n, error: "El descuento no puede superar el subtotal de este producto." };
+  }
+  return { value, cents: subtotalCents === null ? 0n : type === "percent" ? roundDivide(subtotalCents * value, 10000n) : value, error: "" };
 }
 function parseWeight(raw) {
   return parseDecimal(raw, 6, LIMITS.weightMicros, "Usa un peso de 0 a 1,000,000 kg, con máximo 6 decimales.");
@@ -86,6 +97,7 @@ const elements = {
 let nextId = 0;
 let lastQuote = null;
 let toastTimer;
+let showRequiredFields = false;
 
 function restoreExchangeRate() {
   elements.exchangeRate.value = String(DEFAULT_USD_TO_CRC);
@@ -105,7 +117,7 @@ function changeExchangeRate() {
 function setText(id, value) { document.getElementById(id).textContent = value; }
 function setMoneyPair(prefix, cents, unavailable = false, crcCents = undefined) {
   setText(prefix + "-usd", unavailable ? "—" : usd(cents));
-  setText(prefix + "-crc", unavailable || crcCents === null ? "—" : crcCents === undefined ? crc(cents) : formatAmount(crcCents, "₡", false));
+  setText(prefix + "-crc", unavailable || crcCents === null ? "—" : crcCents === undefined ? crc(cents) : formatAmount(crcCents, "₡", true));
 }
 function showFieldError(input, message) {
   const error = document.getElementById(input.dataset.error || "weight-error");
@@ -141,8 +153,22 @@ function addProduct(focus = true) {
         <p class="field-error" id="quantity-error-${id}" hidden></p>
       </div>
     </div>
+    <div class="row-fields discount-fields">
+      <div class="field"><label for="discount-type-${id}">Tipo de descuento</label>
+        <select id="discount-type-${id}" class="discount-type"><option value="percent">Porcentaje (%)</option><option value="fixed">Monto fijo (USD)</option></select>
+      </div>
+      <div class="field"><label class="discount-label" for="discount-${id}">Descuento (%)</label>
+        <div class="input-shell"><input id="discount-${id}" class="discount-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" maxlength="18" aria-describedby="discount-error-${id} discount-hint-${id}" data-error="discount-error-${id}"></div>
+        <p class="field-hint discount-hint" id="discount-hint-${id}">Se aplica al subtotal de este producto.</p>
+        <p class="field-error" id="discount-error-${id}" hidden></p>
+      </div>
+    </div>
     <label class="checkbox-label"><input class="tax-exempt-input" type="checkbox"> Producto exento (registro; no agrega impuestos)</label>
-    <div class="line-subtotal"><span>Subtotal</span><div class="line-money"><strong class="line-usd">$0.00</strong><span class="line-crc">₡0</span></div></div>`;
+    <dl class="line-breakdown">
+      <div><dt>Subtotal original</dt><dd class="line-original-usd">$0.00</dd></div>
+      <div><dt>Descuento aplicado</dt><dd class="line-discount-usd">$0.00</dd></div>
+      <div class="line-subtotal"><dt>Total del producto</dt><dd class="line-money"><strong class="line-usd">$0.00</strong><span class="line-crc">₡0.00</span></dd></div>
+    </dl>`;
   elements.list.append(row);
   renumberRows();
   updateQuote();
@@ -154,12 +180,12 @@ function renderTariffs() {
   SHIPPING_RATES.forEach((rate, index) => {
     const row = document.createElement("tr");
     row.dataset.rateIndex = String(index);
-    [rate.label, usd(rate.priceCents), formatAmount(rate.priceCrcCents, "₡", false)].forEach(value => {
+    [rate.label, usd(rate.priceCents), formatAmount(rate.priceCrcCents, "₡", true)].forEach(value => {
       const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
     });
     body.append(row);
   });
-  const rateLabel = exchangeRateCents === null ? "—" : formatAmount(exchangeRateCents, "₡", false);
+  const rateLabel = exchangeRateCents === null ? "—" : formatAmount(exchangeRateCents, "₡", true);
   setText("exchange-header", "$1 = " + rateLabel);
   setText("exchange-note", exchangeRateCents === null ? "Ingresa un tipo de cambio válido." : "Tipo de cambio: $1 USD = " + rateLabel + " CRC");
 }
@@ -204,38 +230,54 @@ function updateQuote() {
   exchangeRateCents = exchangeRate.value;
   showFieldError(elements.exchangeRate, exchangeRate.error);
   renderTariffs();
-  let subtotal = 0n;
+  let subtotal = 0n, originalSubtotal = 0n, discounts = 0n;
+  const items = [];
   let units = 0n;
   let productCount = 0;
   let hasInvalidProduct = false;
+  const hasEnteredPrice = [...elements.list.children].some(row => row.querySelector(".price-input").value.trim());
   for (const row of elements.list.children) {
     const priceInput = row.querySelector(".price-input");
     const quantityInput = row.querySelector(".quantity-input");
     const price = parsePrice(priceInput.value);
     const quantity = parseQuantity(quantityInput.value);
+    const discountInput = row.querySelector(".discount-input");
+    const discountType = row.querySelector(".discount-type");
+    row.querySelector(".discount-label").textContent = discountType.value === "fixed" ? "Descuento (USD)" : "Descuento (%)";
     // Una línea nueva intacta no modifica ni bloquea la cotización existente.
-    const untouched = priceInput.value.trim() === "" && !priceInput.dataset.touched && !quantityInput.dataset.touched;
+    const untouched = priceInput.value.trim() === "" && !priceInput.dataset.touched && !quantityInput.dataset.touched
+      && !discountInput.dataset.touched && !discountType.dataset.touched && !(showRequiredFields && !hasEnteredPrice && row === elements.list.firstElementChild);
     const priceError = price.error || (!untouched && price.value === null ? "Ingresa el precio o elimina esta línea." : "");
     showFieldError(priceInput, priceError);
     showFieldError(quantityInput, untouched ? "" : quantity.error);
-    const valid = price.value !== null && quantity.value !== null;
-    const lineCents = valid ? price.value * quantity.value : 0n;
+    const gross = price.value !== null && quantity.value !== null ? price.value * quantity.value : null;
+    const discount = parseDiscount(discountInput.value, discountType.value, gross);
+    showFieldError(discountInput, discount.error);
+    const valid = gross !== null && !discount.error;
+    const lineCents = valid ? gross - discount.cents : 0n;
+    row.querySelector(".line-original-usd").textContent = gross === null ? untouched ? usd(0n) : "—" : usd(gross);
+    row.querySelector(".line-discount-usd").textContent = discount.error ? "—" : usd(discount.cents);
     row.querySelector(".line-usd").textContent = untouched ? usd(0n) : valid ? usd(lineCents) : "—";
     row.querySelector(".line-crc").textContent = untouched ? crc(0n) : valid ? crc(lineCents) : "Pendiente";
-    if (valid) { subtotal += lineCents; units += quantity.value; productCount++; }
-    if (!untouched && (!valid || priceError || quantity.error)) hasInvalidProduct = true;
+    if (valid) {
+      subtotal += lineCents; originalSubtotal += gross; discounts += discount.cents; units += quantity.value; productCount++;
+      items.push({ description: row.querySelector(".description-input").value.trim() || row.querySelector(".row-name").textContent,
+        quantity: quantity.value, originalSubtotal: gross, discount: discount.cents, total: lineCents });
+    }
+    if (!untouched && (!valid || priceError || quantity.error || discount.error)) hasInvalidProduct = true;
   }
   const packages = []; const selectedRates = new Set();
   let shipping = 0n, shippingCrc = 0n, weightMicros = 0n, hasWeight = true, weightError = false;
   document.querySelectorAll(".package-row").forEach(row => {
     const input = row.querySelector(".package-weight"); const weight = parseWeight(input.value);
-    showFieldError(input, weight.error); weightError ||= Boolean(weight.error);
+    const error = weight.error || (showRequiredFields && weight.value === null ? "Ingresa el peso de este bulto." : "");
+    showFieldError(input, error); weightError ||= Boolean(error);
     if (weight.value === null) hasWeight = false;
     const index = weight.value === null ? -1 : shippingIndex(weight.value);
     const rate = index < 0 ? null : SHIPPING_RATES[index];
     const cost = rate?.priceCents ?? 0n, costCrc = rate?.priceCrcCents ?? 0n;
     row.querySelector(".package-usd").textContent = weight.error ? "—" : usd(cost);
-    row.querySelector(".package-crc").textContent = weight.error ? "—" : formatAmount(costCrc, "₡", false);
+    row.querySelector(".package-crc").textContent = weight.error ? "—" : formatAmount(costCrc, "₡", true);
     shipping += cost; shippingCrc += costCrc; weightMicros += weight.value ?? 0n;
     if (rate) selectedRates.add(index);
     packages.push({ weightMicros: weight.value, shipping: cost, shippingCrc: costCrc });
@@ -246,16 +288,20 @@ function updateQuote() {
   const total = subtotal + shipping;
   const totalCrc = quoteTotalCrc(subtotal, shippingCrc);
   const ready = productCount > 0 && hasWeight && !hasError;
-  lastQuote = { subtotal, shipping, shippingCrc, packages, weightMicros, total, totalCrc, units, productCount, ready, exchangeRateCents,
+  lastQuote = { subtotal, originalSubtotal, discounts, items, shipping, shippingCrc, packages, weightMicros, total, totalCrc, units, productCount, ready, exchangeRateCents,
     customerName: document.getElementById("customer-name")?.value.trim() || "" };
 
   setMoneyPair("products", subtotal, hasInvalidProduct);
-  setMoneyPair("summary-products", subtotal, hasInvalidProduct);
+  setMoneyPair("summary-products", originalSubtotal, hasInvalidProduct);
+  // El ajuste de redondeo en CRC conserva subtotal original − descuento = productos netos.
+  const originalCrc = quoteTotalCrc(originalSubtotal, 0n);
+  const netCrc = quoteTotalCrc(subtotal, 0n);
+  setMoneyPair("summary-discounts", discounts, hasInvalidProduct, originalCrc === null ? null : originalCrc - netCrc);
   setMoneyPair("shipping", shipping, weightError, shippingCrc);
   setMoneyPair("summary-shipping", shipping, weightError, shippingCrc);
   setMoneyPair("total", total, hasAmountError, totalCrc);
   setText("mobile-usd", hasAmountError ? "—" : usd(total) + " USD");
-  setText("mobile-crc", hasAmountError || totalCrc === null ? "—" : formatAmount(totalCrc, "₡", false));
+  setText("mobile-crc", hasAmountError || totalCrc === null ? "—" : formatAmount(totalCrc, "₡", true));
   setText("mobile-label", hasError ? "Revisa los datos" : ready ? "Total a pagar" : "Total parcial");
   const unitLabel = integerFormatter.format(units) + (units === 1n ? " unidad" : " unidades");
   setText("unit-count", unitLabel);
@@ -269,6 +315,7 @@ function updateQuote() {
   document.dispatchEvent(new CustomEvent("quote:changed"));
 }
 function clearQuote() {
+  showRequiredFields = false;
   elements.list.replaceChildren();
   elements.weight.value = "";
   document.querySelectorAll(".package-row").forEach((row, index) => { if (index) row.remove(); });
@@ -282,11 +329,17 @@ function summaryText(quote) {
   return [
     quote.customerName ? "¡Hola, " + quote.customerName + "! 😊" : "¡Hola! 😊", "",
     "Con mucho gusto te compartimos la cotización de tu pedido en Mega Regalon:", "",
+    ...quote.items.flatMap((item, index) => [
+      (index + 1) + ". " + item.description + " · " + item.quantity + " unidades",
+      "Subtotal: " + usd(item.originalSubtotal) + " · Descuento: " + usd(item.discount) + " · Total: " + usd(item.total)
+    ]), "",
+    "Subtotal original: " + usd(quote.originalSubtotal),
+    "Descuentos individuales: " + usd(quote.discounts),
     "Productos (" + integerFormatter.format(quote.units) + " unidades): " + usd(quote.subtotal) + " / " + crc(quote.subtotal, quote.exchangeRateCents),
-    "Envío: " + usd(quote.shipping) + " / " + formatAmount(quote.shippingCrc, "₡", false), "",
-    ...quote.packages.map((p, i) => "Bulto " + (i + 1) + ": " + Number(p.weightMicros) / 1000000 + " kg · " + usd(p.shipping) + " / " + formatAmount(p.shippingCrc, "₡", false)), "",
-    "Total estimado de tu pedido:", usd(quote.total) + " USD", formatAmount(quote.totalCrc, "₡", false) + " CRC", "",
-    "Tipo de cambio: $1 USD = " + formatAmount(quote.exchangeRateCents, "₡", false) + " CRC.",
+    "Envío: " + usd(quote.shipping) + " / " + formatAmount(quote.shippingCrc, "₡", true), "",
+    ...quote.packages.map((p, i) => "Bulto " + (i + 1) + ": " + Number(p.weightMicros) / 1000000 + " kg · " + usd(p.shipping) + " / " + formatAmount(p.shippingCrc, "₡", true)), "",
+    "Total estimado de tu pedido:", usd(quote.total) + " USD", formatAmount(quote.totalCrc, "₡", true) + " CRC", "",
+    "Tipo de cambio: $1 USD = " + formatAmount(quote.exchangeRateCents, "₡", true) + " CRC.",
     "El monto es estimado; te confirmaremos el total final al pasar por caja.", "",
     "Si tienes alguna duda sobre tu cotización, escríbenos. ¡Con gusto te ayudamos!", "",
     "¡Gracias por confiar en nosotros! 💛",
@@ -324,8 +377,11 @@ async function copySummary() {
 }
 
 elements.list.addEventListener("input", event => {
-  if (!event.target.matches("input")) return;
+  if (!event.target.matches("input, select")) return;
   event.target.dataset.touched = "true"; updateQuote();
+});
+elements.list.addEventListener("change", event => {
+  if (event.target.matches(".discount-type")) { event.target.dataset.touched = "true"; updateQuote(); }
 });
 elements.list.addEventListener("click", event => {
   const button = event.target.closest(".delete-button");
@@ -360,13 +416,17 @@ function currentSnapshot() {
     const price = parsePrice(row.querySelector(".price-input").value);
     const quantity = parseQuantity(row.querySelector(".quantity-input").value);
     if (price.value === null || quantity.value === null) return [];
+    const type = row.querySelector(".discount-type").value;
+    const discount = parseDiscount(row.querySelector(".discount-input").value, type, price.value * quantity.value);
     return [{ description: row.querySelector(".description-input").value.trim() || row.querySelector(".row-name").textContent,
       unit_price_cents: price.value.toString(), quantity: Number(quantity.value),
+      discount_type: type, discount_value: discount.value.toString(),
       tax_exempt: row.querySelector(".tax-exempt-input").checked }];
   });
-  return { items, exchange_rate_cents: exchangeRateCents.toString(), weight_micros: lastQuote.weightMicros.toString(), packages: lastQuote.packages.map(p => ({ weight_micros: p.weightMicros.toString() })), shipping_pricing_version: 3 };
+  return { items, discount_pricing_version: 1, exchange_rate_cents: exchangeRateCents.toString(), weight_micros: lastQuote.weightMicros.toString(), packages: lastQuote.packages.map(p => ({ weight_micros: p.weightMicros.toString() })), shipping_pricing_version: 3 };
 }
 function loadSnapshot(snapshot) {
+  showRequiredFields = false;
   elements.list.replaceChildren();
   elements.exchangeRate.value = decimalInput(snapshot.exchange_rate_cents);
   document.querySelectorAll(".package-row").forEach((row, index) => { if (index) row.remove(); });
@@ -380,7 +440,10 @@ function loadSnapshot(snapshot) {
     row.querySelector(".quantity-input").value = String(item.quantity);
     row.querySelector(".description-input").value = item.description;
     row.querySelector(".tax-exempt-input").checked = item.tax_exempt;
+    row.querySelector(".discount-type").value = item.discount_type ?? "percent";
+    row.querySelector(".discount-input").value = decimalInput(item.discount_value ?? "0");
   }
   updateQuote();
 }
-window.Cotizador = Object.freeze({ getSnapshot: currentSnapshot, loadSnapshot, clearQuote, refresh: updateQuote, showToast });
+window.Cotizador = Object.freeze({ getSnapshot: currentSnapshot, loadSnapshot, clearQuote, refresh: updateQuote, showToast,
+  validate() { showRequiredFields = true; updateQuote(); return lastQuote.ready; } });
