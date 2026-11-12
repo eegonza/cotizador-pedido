@@ -101,7 +101,7 @@ test('Login por usuario, cálculo existente y guardado automático del cliente',
   await expect(page.locator('#toast')).toHaveText('Información guardada correctamente.');
   await expect(page.locator('#toast')).toBeVisible();
   await expect(page.locator('[data-view="users"]')).toBeHidden();
-  await expect(page.locator('.app-watermark')).toContainText('Erick Gonzalez'); expect(f.errors).toEqual([]);
+  await expect(page.locator('.app-watermark')).toContainText('eegonza'); expect(f.errors).toEqual([]);
   await page.screenshot({ path: test.info().outputPath('cotizador-escritorio.png'), fullPage: true });
 });
 test('Entrar con el teclado usa POST a Auth y conserva una URL sin credenciales', async ({ page }) => {

@@ -103,3 +103,5 @@ VERIFICACIÓN DE CREDENCIALES FUERA DE LA URL — 2026-11-12
 - Prueba adicional del dist real servido bajo /cotizador-pedido/: script independiente disponible con HTTP 200, URL heredada limpiada, acceso por POST sin parámetros de credenciales, envío nativo bloqueado y acceso deshabilitado con el bundle bloqueado.
 - La limpieza del historial actual no elimina registros anteriores ni revierte el primer acceso a una URL ya contaminada. Las contraseñas que aparecieron deben restablecerse.
 - Sin cambios de esquema, claves de servidor ni Edge Functions. No se utilizaron contraseñas reales en las pruebas.
+- Tras integrar el cambio remoto de los créditos, se mantuvo el pie de página del propietario y se ajustó la expectativa de esa prueba; los otros 37 casos de navegador aprobaron sobre esa versión combinada.
+- El caso de acceso y créditos se volvió a ejecutar de forma individual: 1 aprobada, 0 fallidas; con ello quedan comprobados los 38 casos de navegador sobre los cambios finales.
