@@ -60,6 +60,24 @@ En **Bultos y envíos**, escribe el peso del primer bulto y usa **Agregar bulto*
 
 El desglose se guarda dentro de la misma cotización y aparece en su detalle, edición y resumen para copiar. Los envíos siguen fijos en colones; solo los productos usan el cambio editable. Las cotizaciones anteriores se conservan y se abren con su único bulto. La actualización `supabase/migrations/202610190002_varios_bultos.sql` reemplaza la función de futuros guardados, mantiene la protección de cotizaciones eliminadas y no modifica registros existentes.
 
+## Descuentos individuales y guardado
+
+Cada producto tiene un selector de **porcentaje (%)** o **monto fijo (USD)**. El descuento se aplica una vez al subtotal de su línea (`precio unitario × cantidad`), nunca al envío ni a los otros productos. El porcentaje admite dos decimales, hasta 100 %; el monto fijo admite dos decimales y no puede superar ese subtotal. Vacío equivale a cero. Los campos inválidos se señalan y bloquean el guardado y la copia.
+
+Por ejemplo, $20.00 × 2 con 10 % queda en $36.00; otro producto de $15.00 sin descuento da **$51.00 en productos**. Al indicar un bulto de 5 kg se conserva el envío de $15.00 / ₡7,500.00: total $66.00 / ₡33,000.00 con cambio 500. Las tarifas de envío existentes siguen aplicándose por bulto.
+
+La interfaz y PostgreSQL usan cantidades enteras: centavos USD para descuentos fijos y puntos básicos para porcentajes (10 % = 1000). Se redondea el descuento de cada línea al centavo, con mitades hacia arriba. El tipo de cambio se aplica a la suma de productos después de descuentos, conservando el envío fijo en CRC. Los importes visibles y el CSV usan dos decimales. El resumen en CRC distribuye el centavo de redondeo para que subtotal original − descuentos + envío coincida con el total.
+
+El tipo, el valor y el importe calculado se guardan en `quote_items`, el pedido normalizado, su snapshot y las revisiones. El historial, la edición, las copias, el resumen para compartir y el CSV conservan el desglose. Los registros anteriores se muestran sin descuento y mantienen sus importes históricos; esta migración no los recalcula.
+
+**Antes de publicar esta interfaz:**
+
+1. En el SQL Editor del proyecto de Supabase que utiliza la aplicación (en este entorno, `dmrgbwimauiwawyxpmvp`), ejecutar una vez `supabase/migrations/202611120001_descuentos_productos.sql`, después de las cinco migraciones anteriores.
+2. La migración añade columnas de descuento y reemplaza `save_quote`, manteniendo permisos, conflictos de revisión y protección de cotizaciones eliminadas. Añade la consulta de compatibilidad `quote_discount_version`, disponible solo para cuentas activas autenticadas.
+3. Publicar la interfaz después de aplicar el SQL. El cliente comprueba la compatibilidad antes de guardar para impedir que un servidor antiguo ignore los descuentos. Los clientes anteriores tampoco pueden sobrescribir pedidos con descuentos sin actualizarse.
+
+**Guardar pedido** está dentro de **Total del pedido**, debajo del total. Comparte el mismo guardado automático e ID estable; se desactiva durante la petición y muestra progreso, éxito o error. La validación enfoca el primer campo que debe corregirse. Las tarjetas, controles de al menos 44 px y tablas adaptadas se verifican a 360, 375, 390, 414, 430, 768, 1024 y 1440 px.
+
 ## Eliminar cotizaciones
 
 Un administrador activo puede eliminar una cotización desde **Mis cotizaciones → Ver detalles → Eliminar cotización**. Para cotizaciones de otros vendedores, usa **Auditoría → Ver todas las cotizaciones**. La confirmación elimina definitivamente la cotización, sus productos y revisiones; conserva los clientes y la auditoría, que registra el administrador responsable. La cotización deja de sumar en los reportes. Si otra sesión la modificó, hay que volver a consultar el detalle antes de confirmar. Un autoguardado tardío no puede recrear el mismo ID eliminado. Esta función requiere `supabase/migrations/202610190001_borrar_cotizaciones.sql`; aplicarla solo instala la función, no borra cotizaciones existentes.

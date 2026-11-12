@@ -32,7 +32,19 @@ export function login(username, password) {
 export function profile(id) {
   return result(supabase.from('profiles').select('id,username,display_name,role,active').eq('id', id).single());
 }
-export function saveQuote(id, revision, payload) {
+let discountSupport;
+async function requireDiscountSupport() {
+  if (!discountSupport) {
+    discountSupport = (async () => {
+      const { data, error } = await supabase.rpc('quote_discount_version');
+      if (error || data !== 1) throw new Error('Los descuentos aún no están habilitados en el servidor. Contacta al administrador para actualizarlo antes de guardar.');
+    })().catch(error => { discountSupport = null; throw error; });
+  }
+  await discountSupport;
+}
+export async function saveQuote(id, revision, payload) {
+  // Evita que un servidor anterior guarde un pedido ignorando sus descuentos.
+  await requireDiscountSupport();
   return result(supabase.rpc('save_quote', { p_id: id, p_expected_revision: revision, p_payload: payload }));
 }
 export function searchQuotes(filters) { return result(supabase.rpc('search_quotes', filters)); }

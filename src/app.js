@@ -13,9 +13,27 @@ const actionLabels = { login: 'Inicio de sesión', logout: 'Cierre de sesión', 
   password_reset_requested: 'Restablecimiento solicitado', admin_bootstrapped: 'Administrador inicial creado', user_provisioned: 'Cuenta técnica creada (inactiva)' };
 
 function status(id, text, error = false) { $(id).textContent = text; $(id).classList.toggle('error', error); }
+function updateSaveButton(saving = Boolean(state.saving)) {
+  $('save-quote').setAttribute('aria-busy', String(saving));
+  $('save-quote').textContent = saving ? 'Guardando…' : 'Guardar pedido';
+  $('save-quote').disabled = saving || state.id === state.deletingId;
+}
+function saveStatus(text, kind = 'idle') {
+  status('save-status', text, kind === 'error');
+  $('save-quote').closest('.summary').dataset.saveState = kind;
+  updateSaveButton(kind === 'saving' || Boolean(state.saving));
+}
+function focusInvalidField() {
+  const invalid = $('quote-view').querySelector('[aria-invalid="true"]');
+  if (invalid) { invalid.focus(); invalid.scrollIntoView({ block: 'center', behavior: 'auto' }); }
+}
 let messageScope = null;
 function message(text, error = false, scope = null) { messageScope = text ? scope : null; $('app-message').hidden = !text; status('app-message', text, error); }
 function cell(row, text) { const td = document.createElement('td'); td.textContent = String(text ?? ''); row.append(td); return td; }
+function labelTableRows(body) {
+  const labels = [...body.closest('table').querySelectorAll('thead th')].map(th => th.textContent);
+  for (const row of body.rows) [...row.cells].forEach((td, index) => { td.dataset.label = labels[index] || ''; });
+}
 function button(text, action) { const b = document.createElement('button'); b.type = 'button'; b.className = 'small-button'; b.textContent = text; b.addEventListener('click', () => run(action)); return b; }
 async function run(action, scope = null) { try { await action(); } catch (error) { message(error.message || 'No se pudo completar la operación.', true, scope); } }
 function clearPrivateData() {
@@ -30,6 +48,7 @@ function clearPrivateData() {
   document.querySelectorAll('[data-admin]').forEach(el => { el.hidden = true; });
   for (const id of ['quote-view', 'history-view', 'users-view', 'audit-view', 'app-toolbar', 'mobile-total', 'exchange-control']) $(id).hidden = true;
   $('login-view').hidden = false; $('session-name').textContent = ''; message('');
+  saveStatus('Completa el cliente, los productos y el peso para guardar automáticamente.');
 }
 async function activateSession(session) {
   if (!session) { clearPrivateData(); return; }
@@ -76,10 +95,17 @@ function updateCustomerValidity(show = false) {
 function queueSave() {
   if (!state.profile || state.hydrating || state.id === state.deletingId) return;
   updateCustomerValidity(); clearTimeout(state.timer);
-  let next; try { next = payload(); } catch { return; }
-  if (!next) return;
-  if (JSON.stringify(next) === state.saved) { if (messageScope === 'save') message(''); return; }
-  status('save-status', 'Cambios pendientes; se guardarán automáticamente…');
+  let next; try { next = payload(); } catch { saveStatus('Completa correctamente los datos del cliente.', 'error'); return; }
+  if (!next) {
+    if ($('quote-view').querySelector('[aria-invalid="true"]')) saveStatus('Corrige los campos marcados antes de guardar.', 'error');
+    return;
+  }
+  if (JSON.stringify(next) === state.saved) {
+    if (messageScope === 'save') message('');
+    if (!state.saving) saveStatus(`${$('editing-number').textContent} guardada · revisión ${state.revision}.`, 'success');
+    return;
+  }
+  if (!state.saving) saveStatus('Cambios pendientes; se guardarán automáticamente…', 'pending');
   state.timer = setTimeout(() => { run(() => flushSave(), 'save'); }, 900);
 }
 async function flushSave(required = false) {
@@ -87,25 +113,26 @@ async function flushSave(required = false) {
   if (!state.profile) throw new Error('Inicia sesión para guardar.');
   if (state.id === state.deletingId) throw new Error('La cotización se está eliminando.');
   if (state.saving) { await state.saving; return flushSave(required); }
+  if (required) { window.Cotizador.validate(); updateCustomerValidity(true); clearTimeout(state.timer); }
   let next;
   try { next = payload(); } catch (error) { if (required) { updateCustomerValidity(true); throw error; } return; }
   if (!next) { if (required) throw new Error('Completa al menos un producto válido y el peso de cada bulto.'); return; }
   const hash = JSON.stringify(next);
   if (hash === state.saved) { if (messageScope === 'save') message(''); return; }
   const id = state.id; const epoch = state.epoch; const revision = state.revision;
-  status('save-status', 'Guardando cotización…'); $('save-quote').disabled = true;
+  saveStatus('Guardando pedido…', 'saving');
   state.saving = (async () => {
     try {
       const saved = await api.saveQuote(id, revision, next);
       if (epoch !== state.epoch || state.id !== id) return;
       state.revision = saved.revision; state.saved = hash;
       $('editing-number').textContent = saved.number;
-      status('save-status', `${saved.number} guardada · revisión ${saved.revision}.`);
+      saveStatus(`${saved.number} guardada · revisión ${saved.revision}.`, 'success');
       if (messageScope === 'save') message('');
     } catch (error) {
-      if (epoch === state.epoch) status('save-status', error.code === 'P0002' ? 'Esta cotización fue eliminada. Pulsa Limpiar cotización para comenzar otra.' : error.code === '40001' ? 'Otra sesión modificó esta cotización. Abre su versión actual desde el historial antes de editar.' : 'No se pudo guardar. Tus datos siguen en el formulario; pulsa Guardar ahora para reintentar.', true);
+      if (epoch === state.epoch) saveStatus(error.code === 'P0002' ? 'Esta cotización fue eliminada. Pulsa Limpiar cotización para comenzar otra.' : error.code === '40001' ? 'Otra sesión modificó esta cotización. Abre su versión actual desde el historial antes de editar.' : 'No se pudo guardar. Tus datos siguen en el formulario; pulsa Guardar pedido para reintentar.', 'error');
       throw error;
-    } finally { state.saving = null; $('save-quote').disabled = state.id === state.deletingId; }
+    } finally { state.saving = null; updateSaveButton(); }
   })();
   await state.saving;
   if (epoch === state.epoch && state.id === id) queueSave();
@@ -118,7 +145,7 @@ function resetQuote() {
   clearTimeout(state.timer); state.hydrating = true;
   state.id = crypto.randomUUID(); state.revision = 0; state.saved = ''; $('customer-name').value = '';
   window.Cotizador.clearQuote(); $('editing-number').textContent = 'Nueva cotización';
-  status('save-status', 'Completa el cliente, los productos y el peso para guardar automáticamente.');
+  saveStatus('Completa el cliente, los productos y el peso para guardar automáticamente.');
   updateCustomerValidity(); state.hydrating = false;
 }
 async function deleteQuote(q, control) {
@@ -156,9 +183,10 @@ async function loadQuotes() {
   for (const q of data.rows) {
     const row = document.createElement('tr'); const s = q.snapshot; const when = dateAndTime(q.created_at);
     [q.number, q.username, q.customer_name, when.date, when.time, s.product_count, money(s.subtotal_cents),
-      money(s.shipping_cents), money(s.total_usd_cents), money(s.total_crc_cents, '₡', false), labels[q.status]].forEach(v => cell(row, v));
+      money(s.shipping_cents), money(s.total_usd_cents), money(s.total_crc_cents, '₡', true), labels[q.status]].forEach(v => cell(row, v));
     cell(row, '').append(button('Ver detalles', () => openQuote(q.id))); $('quotes-body').append(row);
   }
+  labelTableRows($('quotes-body'));
   status('history-status', data.total ? `${data.total} cotizaciones encontradas. Fechas y horas de Panamá.` : 'No hay cotizaciones con esos filtros.');
   $('quotes-page').textContent = `Página ${state.quotesPage} de ${Math.max(1, Math.ceil(data.total / 20))}`;
   $('quotes-prev').disabled = state.quotesPage <= 1; $('quotes-next').disabled = state.quotesPage * 20 >= data.total;
@@ -182,18 +210,24 @@ async function openQuote(id) {
   $('quote-detail-title').textContent = q.number; const content = $('quote-detail-content'); content.replaceChildren();
   paragraph(content, `Cliente: ${q.customer_name}`); paragraph(content, `Usuario: ${q.username}`);
   paragraph(content, `${when.date} · ${when.time} (Panamá) · ${labels[q.status]} · revisión ${q.revision}`);
-  paragraph(content, `Cambio de esta cotización: $1 USD = ${money(s.exchange_rate_cents, '₡', false)} CRC.`, 'detail-rate');
+  paragraph(content, `Cambio de esta cotización: $1 USD = ${money(s.exchange_rate_cents, '₡', true)} CRC.`, 'detail-rate');
   const wrapper = document.createElement('div'); wrapper.className = 'data-table-wrapper'; const table = document.createElement('table'); table.className = 'data-table';
   const thead = document.createElement('thead'); const head = document.createElement('tr');
-  ['Producto', 'Cantidad', 'Precio USD', 'Subtotal USD', 'Exento'].forEach(label => { const th = document.createElement('th'); th.textContent = label; head.append(th); });
+  ['Producto', 'Cantidad', 'Precio USD', 'Subtotal original USD', 'Descuento USD', 'Total USD', 'Exento'].forEach(label => { const th = document.createElement('th'); th.textContent = label; head.append(th); });
   thead.append(head); table.append(thead); const tbody = document.createElement('tbody');
-  for (const item of s.items) { const row = document.createElement('tr'); [item.description, item.quantity, money(item.unit_price_cents), money(item.subtotal_cents), item.tax_exempt ? 'Sí' : 'No'].forEach(v => cell(row, v)); tbody.append(row); }
+  for (const item of s.items) {
+    const row = document.createElement('tr');
+    [item.description, item.quantity, money(item.unit_price_cents), money(item.original_subtotal_cents ?? item.subtotal_cents),
+      money(item.discount_cents ?? '0'), money(item.subtotal_cents), item.tax_exempt ? 'Sí' : 'No'].forEach(v => cell(row, v)); tbody.append(row);
+  }
   table.append(tbody); wrapper.append(table); content.append(wrapper);
+  labelTableRows(tbody);
   paragraph(content, `Peso: ${Number(s.weight_micros) / 1000000} kg · ${s.shipping_rate_label}`);
   const shippingCrc = s.shipping_crc_cents ?? ((BigInt(s.shipping_cents) * BigInt(s.exchange_rate_cents) + 50n) / 100n).toString();
-  paragraph(content, `Subtotal: ${money(s.subtotal_cents)} · Envío: ${money(s.shipping_cents)} / ${money(shippingCrc, '₡', false)}`);
-  if (s.packages) s.packages.forEach((p, i) => paragraph(content, `Bulto ${i + 1}: ${Number(p.weight_micros) / 1000000} kg · ${money(p.shipping_cents)} / ${money(p.shipping_crc_cents, '₡', false)}`));
-  paragraph(content, `TOTAL: ${money(s.total_usd_cents)} USD / ${money(s.total_crc_cents, '₡', false)} CRC`, 'detail-total');
+  paragraph(content, `Subtotal: ${money(s.subtotal_cents)} · Envío: ${money(s.shipping_cents)} / ${money(shippingCrc, '₡', true)}`);
+  paragraph(content, `Subtotal original: ${money(s.original_subtotal_cents ?? s.subtotal_cents)} · Descuentos individuales: ${money(s.discount_cents ?? '0')}`);
+  if (s.packages) s.packages.forEach((p, i) => paragraph(content, `Bulto ${i + 1}: ${Number(p.weight_micros) / 1000000} kg · ${money(p.shipping_cents)} / ${money(p.shipping_crc_cents, '₡', true)}`));
+  paragraph(content, `TOTAL: ${money(s.total_usd_cents)} USD / ${money(s.total_crc_cents, '₡', true)} CRC`, 'detail-total');
   paragraph(content, s.tax_note);
   const changes = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Historial de revisiones y valores anteriores'; changes.append(summary);
   for (const revision of q.revisions) {
@@ -224,9 +258,9 @@ async function editQuote(q, copy) {
   await flushSave(); if (!copy) q = await api.getQuote(q.id); state.hydrating = true;
   state.id = copy ? crypto.randomUUID() : q.id; state.revision = copy ? 0 : q.revision;
   $('customer-name').value = q.customer_name; window.Cotizador.loadSnapshot(q.snapshot);
-  const legacyPricing = q.snapshot.shipping_pricing_version !== 3;
+  const legacyPricing = q.snapshot.shipping_pricing_version !== 3 || q.snapshot.discount_pricing_version !== 1;
   state.saved = copy || legacyPricing ? '' : JSON.stringify(payload()); $('editing-number').textContent = copy ? 'Copia nueva' : q.number;
-  status('save-status', copy ? 'La copia se guardará como una cotización nueva.' : legacyPricing ? `${q.number} cargada con las tarifas actuales; pulsa Guardar ahora para registrar una nueva revisión.` : `${q.number} cargada; los cambios crearán una nueva revisión.`);
+  saveStatus(copy ? 'La copia se guardará como una cotización nueva.' : legacyPricing ? `${q.number} cargada con las tarifas actuales; pulsa Guardar pedido para registrar una nueva revisión.` : `${q.number} cargada; los cambios crearán una nueva revisión.`);
   state.hydrating = false; $('quote-detail-dialog').close(); showView('quote'); updateCustomerValidity(); if (copy) queueSave();
 }
 async function loadSellerReport() {
@@ -243,10 +277,11 @@ async function loadSellerReport() {
       const start = dateAndTime(entry.period_start + 'T12:00:00-05:00').date;
       const end = dateAndTime(entry.period_end + 'T12:00:00-05:00').date;
       [start + ' – ' + end, `${entry.seller_name} (${entry.username})`, entry.quote_count,
-        money(entry.total_usd_cents), money(entry.total_crc_cents, '₡', false), entry.quoted_units,
+        money(entry.total_usd_cents), money(entry.total_crc_cents, '₡', true), entry.quoted_units,
         entry.confirmed_count, entry.sold_units].forEach(value => cell(row, value));
       $('seller-report-body').append(row);
     }
+    labelTableRows($('seller-report-body'));
     status('seller-report-status', rows.length ? `${rows.length} resultados. Cada cotización se cuenta una vez; las revisiones no duplican cantidades.` : 'No hay cotizaciones ni ventas en este rango.');
   } catch (error) {
     if (epoch === state.epoch && request === state.reportRequest && state.profile?.role === 'admin') status('seller-report-status', error.message, true);
@@ -268,7 +303,7 @@ async function loadAudit() {
   ]);
   if (epoch !== state.epoch || state.profile?.role !== 'admin') return;
   $('stats-grid').replaceChildren();
-  for (const [label, value] of [['Cotizaciones', stats.quotes], ['Usuarios activos', stats.active_users], ['Total USD (sin canceladas)', money(stats.total_usd_cents)], ['Total CRC histórico (sin canceladas)', money(stats.total_crc_cents, '₡', false)]]) {
+  for (const [label, value] of [['Cotizaciones', stats.quotes], ['Usuarios activos', stats.active_users], ['Total USD (sin canceladas)', money(stats.total_usd_cents)], ['Total CRC histórico (sin canceladas)', money(stats.total_crc_cents, '₡', true)]]) {
     const box = document.createElement('div'); box.className = 'stat-card'; paragraph(box, label); const strong = document.createElement('strong'); strong.textContent = String(value); box.append(strong); $('stats-grid').append(box);
   }
   $('audit-body').replaceChildren();
@@ -276,6 +311,7 @@ async function loadAudit() {
     [event.actor_username || 'Sistema', actionLabels[event.action] || event.action, when.date, when.time, event.resource_id || '—'].forEach(v => cell(row, v));
     cell(row, '').append(button('Ver detalle', () => { $('event-detail-content').textContent = JSON.stringify(event.details, null, 2); $('event-detail-dialog').showModal(); })); $('audit-body').append(row);
   }
+  labelTableRows($('audit-body'));
   state.auditTotal = events.count; status('audit-status', `${events.count} eventos. Solo los administradores pueden consultar esta auditoría.`);
   $('audit-page').textContent = `Página ${state.auditPage} de ${Math.max(1, Math.ceil(events.count / 20))}`;
   $('audit-prev').disabled = state.auditPage <= 1; $('audit-next').disabled = state.auditPage * 20 >= events.count;
@@ -302,6 +338,7 @@ async function loadUsers() {
       $('password-user-id').value = profile.id; $('password-user-name').textContent = profile.username; $('reset-password').value = ''; status('password-status', ''); $('password-dialog').showModal();
     })); $('users-body').append(row);
   }
+  labelTableRows($('users-body'));
   status('users-status', `${state.users.length} usuarios. Las contraseñas nunca se muestran ni se almacenan en perfiles.`);
 }
 function resetUserForm() {
@@ -344,7 +381,11 @@ $('customer-name').addEventListener('input', () => { window.Cotizador.refresh();
 $('save-quote').addEventListener('click', () => run(async () => {
   $('toast').hidden = true;
   const epoch = state.epoch;
-  await flushSave(true);
+  try { await flushSave(true); }
+  catch (error) {
+    if (!state.saving) { saveStatus(error.message || 'No se pudo guardar el pedido.', 'error'); focusInvalidField(); }
+    throw error;
+  }
   if (epoch === state.epoch && state.profile && JSON.stringify(payload()) === state.saved) {
     window.Cotizador.showToast('Información guardada correctamente.');
   }

@@ -52,6 +52,8 @@ Para habilitar **Eliminar cotización**, aplica después `supabase/migrations/20
 
 Para varios bultos, aplica después `supabase/migrations/202610190002_varios_bultos.sql` y luego publica la interfaz correspondiente. Si las actualizaciones anteriores ya están instaladas, ejecuta solo este archivo nuevo. Cada bulto tiene peso y tarifa calculada por el servidor; el total de envío suma todas las tarifas fijas. Las cotizaciones antiguas permanecen intactas. Un navegador con la interfaz anterior debe actualizarse antes de editar una cotización que ya tenga varios bultos.
 
+Para los descuentos individuales, aplica después `supabase/migrations/202611120001_descuentos_productos.sql` **antes de publicar la interfaz nueva**. Ejecuta únicamente esta migración si ya instalaste las anteriores. Añade los campos de descuento por producto y actualiza el guardado del servidor; no recalcula cotizaciones históricas. El cliente comprueba que esté instalada antes de guardar. Para este entorno, el proyecto seleccionado es `dmrgbwimauiwawyxpmvp`; las referencias anteriores a otro proyecto en esta guía son históricas y deben sustituirse por la URL del proyecto que estés usando.
+
 ## 4. Usuarios sin correos electrónicos
 
 En **Authentication → Providers**, mantén habilitado el proveedor **Email/password**, pero desactiva **Allow new users to sign up**. No hay registro abierto en esta aplicación.

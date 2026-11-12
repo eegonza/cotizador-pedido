@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 let db;
 const legacyQuoteId = randomUUID();
+const beforeDiscountId = randomUUID();
 const ids = { admin: '11111111-1111-4111-8111-111111111111', seller: '22222222-2222-4222-8222-222222222222', other: '33333333-3333-4333-8333-333333333333' };
 before(async () => {
   db = new PGlite();
@@ -22,6 +23,8 @@ before(async () => {
   await db.exec(await readFile(new URL('../supabase/migrations/202610110003_reportes.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202610190001_borrar_cotizaciones.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202610190002_varios_bultos.sql', import.meta.url), 'utf8'));
+  await save(ids.seller, beforeDiscountId, 0, payload());
+  await db.exec(await readFile(new URL('../supabase/migrations/202611120001_descuentos_productos.sql', import.meta.url), 'utf8'));
 });
 after(async () => { await db.close(); });
 function asRole(role, id, sql, params = []) {
@@ -239,4 +242,63 @@ test('Bultos de distintos pesos se suman por separado, conservan detalle y no ac
   }
   const zero = await save(ids.seller, randomUUID(), 0, { ...payload(), packages: [{ weight_micros: '0' }, { weight_micros: '0' }] });
   assert.equal(zero.snapshot.shipping_cents, '3000');
+});
+test('Descuentos se recalculan por producto, se persisten y las revisiones conservan sus importes', async () => {
+  const id = randomUUID();
+  const input = { ...payload(), discount_pricing_version: 1, items: [
+    { description: 'Primero', unit_price_cents: '2000', quantity: 2, discount_type: 'percent', discount_value: '1000', discount_cents: '9999', subtotal_cents: '0' },
+    { description: 'Segundo', unit_price_cents: '1500', quantity: 1, discount_type: 'fixed', discount_value: '' }
+  ], total_usd_cents: '1', discount_cents: '10000' };
+  const q = await save(ids.seller, id, 0, input);
+  assert.equal(q.snapshot.original_subtotal_cents, '5500');
+  assert.equal(q.snapshot.discount_cents, '400'); assert.equal(q.snapshot.subtotal_cents, '5100');
+  assert.equal(q.snapshot.items[0].subtotal_cents, '3600'); assert.equal(q.snapshot.items[1].subtotal_cents, '1500');
+  assert.equal(q.snapshot.total_usd_cents, '6600'); assert.equal(q.snapshot.total_crc_cents, '3300000');
+  const rows = (await asUser(ids.seller, 'select discount_type,discount_value,discount_cents from public.quote_items where quote_id=$1 order by position', [id])).rows;
+  assert.deepEqual(rows.map(r => [r.discount_type, String(r.discount_value), String(r.discount_cents)]), [['percent', '1000', '400'], ['fixed', '0', '0']]);
+  assert.equal((await save(ids.seller, id, 1, input)).revision, 1);
+  input.items[0].discount_value = '2000'; input.items[1].discount_value = '125';
+  const next = await save(ids.seller, id, 1, input);
+  assert.equal(next.revision, 2); assert.equal(next.snapshot.discount_cents, '925');
+  const detail = (await asUser(ids.seller, 'select public.get_quote($1) as q', [id])).rows[0].q;
+  assert.equal(detail.snapshot.items[1].discount_value, '125');
+  assert.equal(detail.revisions[0].previous_snapshot.items[0].discount_value, '1000');
+  assert.equal(detail.revisions[0].previous_snapshot.subtotal_cents, '5100');
+  await assert.rejects(() => save(ids.seller, id, 2, payload()), /conservar los descuentos/);
+  const copy = await save(ids.seller, randomUUID(), 0, { ...detail.snapshot });
+  assert.equal(copy.snapshot.subtotal_cents, next.snapshot.subtotal_cents);
+});
+test('Descuentos inválidos no crean cotizaciones y los límites redondean igual que la interfaz', async () => {
+  const discounted = (type, value, price = '2000', quantity = 2) => ({ ...payload(), discount_pricing_version: 1,
+    items: [{ unit_price_cents: price, quantity, discount_type: type, discount_value: value }] });
+  for (const [type, value] of [['percent', '-1'], ['percent', '10001'], ['percent', '10.5'], ['fixed', '4001'], ['fixed', '1e2'], ['other', '0']]) {
+    const id = randomUUID(); await assert.rejects(() => save(ids.seller, id, 0, discounted(type, value)));
+    assert.equal((await db.query('select count(*)::int as n from public.quotes where id=$1', [id])).rows[0].n, 0);
+  }
+  for (const [type, value] of [['percent', '10000'], ['fixed', '4000']]) {
+    const q = await save(ids.seller, randomUUID(), 0, discounted(type, value));
+    assert.equal(q.snapshot.subtotal_cents, '0'); assert.equal(q.snapshot.total_usd_cents, '1500');
+  }
+  const half = await save(ids.seller, randomUUID(), 0, discounted('percent', '5000', '1', 1));
+  assert.equal(half.snapshot.discount_cents, '1'); assert.equal(half.snapshot.subtotal_cents, '0');
+  for (const [type, value] of [['percent', '1'], ['fixed', '0']]) {
+    const id = randomUUID(); const q = await save(ids.seller, id, 0, discounted(type, value, '1', 1));
+    assert.equal(q.snapshot.discount_cents, '0');
+    await assert.rejects(() => save(ids.seller, id, 1, payload()), /conservar los descuentos/);
+  }
+  const large = await save(ids.seller, randomUUID(), 0, discounted('fixed', '9998999990001', '999999999', 9999));
+  assert.equal(large.snapshot.original_subtotal_cents, '9998999990001'); assert.equal(large.snapshot.subtotal_cents, '0');
+  await assert.rejects(() => save(ids.seller, randomUUID(), 0, { ...discounted('percent', '1'), discount_pricing_version: 2 }), /Versión/);
+});
+test('La migración preserva históricos y la compatibilidad solo se consulta con cuenta activa', async () => {
+  const old = (await asUser(ids.seller, 'select public.get_quote($1) as q', [beforeDiscountId])).rows[0].q;
+  assert.equal(old.snapshot.discount_pricing_version, undefined); assert.equal(old.snapshot.subtotal_cents, '2000');
+  const revised = await save(ids.seller, beforeDiscountId, 1, payload());
+  assert.equal(revised.snapshot.discount_pricing_version, 1); assert.equal(revised.snapshot.discount_cents, '0');
+  assert.equal(revised.snapshot.total_usd_cents, old.snapshot.total_usd_cents);
+  const detail = (await asUser(ids.seller, 'select public.get_quote($1) as q', [beforeDiscountId])).rows[0].q;
+  assert.equal(detail.revisions[0].previous_snapshot.discount_pricing_version, undefined);
+  assert.equal((await asUser(ids.seller, 'select public.quote_discount_version() as version')).rows[0].version, 1);
+  await assert.rejects(() => asRole('anon', null, 'select public.quote_discount_version()'), e => e.code === '42501');
+  await assert.rejects(() => asUser(randomUUID(), 'select public.quote_discount_version()'), e => e.code === '42501');
 });

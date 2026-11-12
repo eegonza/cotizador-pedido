@@ -57,8 +57,6 @@
       <section class="panel client-panel" aria-labelledby="client-heading">
         <div class="panel-heading"><h2 id="client-heading">Datos del cliente</h2><span class="count-badge" id="editing-number">Nueva cotización</span></div>
         <div class="field"><label for="customer-name">NOMBRE DEL CLIENTE</label><div class="input-shell"><input id="customer-name" type="text" autocomplete="name" maxlength="120" placeholder="Nombre completo del cliente" aria-describedby="customer-error" data-error="customer-error"></div><p class="field-error" id="customer-error" hidden></p></div>
-        <p class="form-status" id="save-status" aria-live="polite">Completa el cliente, los productos y el peso para guardar automáticamente.</p>
-        <button class="small-button" id="save-quote" type="button">Guardar ahora</button>
       </section>
       <section class="panel product-panel" aria-labelledby="products-heading">
         <div class="panel-heading">
@@ -68,8 +66,8 @@
         <div id="product-list"></div>
         <button type="button" class="button add-button" id="add-product"><span aria-hidden="true">+</span> Agregar producto</button>
         <div class="product-subtotal">
-          <span>Subtotal de productos</span>
-          <div><strong id="products-usd">$0.00</strong><span id="products-crc">₡0</span></div>
+          <span>Productos después de descuentos</span>
+          <div><strong id="products-usd">$0.00</strong><span id="products-crc">₡0.00</span></div>
         </div>
       </section>
 
@@ -81,10 +79,10 @@
             <div class="input-shell"><input id="weight" class="package-weight" data-error="weight-error" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-describedby="weight-error weight-hint" maxlength="20"><span class="input-suffix">kg</span></div>
             <p class="field-error" id="weight-error" hidden></p>
           </div>
-          <div class="shipping-price"><span>Tarifa de este bulto</span><strong class="package-usd">$0.00</strong><span class="package-crc">₡0</span></div>
+          <div class="shipping-price"><span>Tarifa de este bulto</span><strong class="package-usd">$0.00</strong><span class="package-crc">₡0.00</span></div>
         </div></div>
         <button type="button" class="button add-button" id="add-package">+ Agregar bulto</button>
-        <div class="product-subtotal"><div>Total de envíos<br><span id="package-count">1 bulto</span></div><div><strong id="shipping-usd">$0.00</strong><span id="shipping-crc">₡0</span></div></div>
+        <div class="product-subtotal"><div>Total de envíos<br><span id="package-count">1 bulto</span></div><div><strong id="shipping-usd">$0.00</strong><span id="shipping-crc">₡0.00</span></div></div>
         <p class="field-hint" id="weight-hint">Ingresa el peso para aplicar la tarifa.</p>
         <div class="tariff-table-wrapper">
           <table class="tariff-table">
@@ -102,14 +100,17 @@
         <div class="summary-heading"><h2 id="summary-heading">TOTAL DEL PEDIDO</h2><span class="estimate-badge">Estimado</span></div>
         <p class="summary-count" id="summary-count">Agrega el primer producto</p>
         <dl class="summary-lines">
-          <div><dt>Productos</dt><dd><strong id="summary-products-usd">$0.00</strong><span id="summary-products-crc">₡0</span></dd></div>
-          <div><dt>Envío</dt><dd><strong id="summary-shipping-usd">$0.00</strong><span id="summary-shipping-crc">₡0</span></dd></div>
+          <div><dt>Subtotal de productos</dt><dd><strong id="summary-products-usd">$0.00</strong><span id="summary-products-crc">₡0.00</span></dd></div>
+          <div class="summary-discounts"><dt>Descuentos individuales (−)</dt><dd><strong id="summary-discounts-usd">$0.00</strong><span id="summary-discounts-crc">₡0.00</span></dd></div>
+          <div><dt>Envío</dt><dd><strong id="summary-shipping-usd">$0.00</strong><span id="summary-shipping-crc">₡0.00</span></dd></div>
         </dl>
         <div class="grand-total" aria-live="polite" aria-atomic="true">
           <span class="total-label">TOTAL A PAGAR</span>
           <div class="total-usd"><strong id="total-usd">$0.00</strong><span>USD</span></div>
-          <div class="total-crc"><strong id="total-crc">₡0</strong><span>CRC</span></div>
+          <div class="total-crc"><strong id="total-crc">₡0.00</strong><span>CRC</span></div>
         </div>
+        <button class="button save-button" id="save-quote" type="button" aria-describedby="save-status">Guardar pedido</button>
+        <p class="form-status save-status" id="save-status" role="status" aria-live="polite">Completa el cliente, los productos y el peso para guardar automáticamente.</p>
         <p class="summary-status" id="summary-status">Agrega productos y peso para completar la cotización.</p>
         <button type="button" class="button copy-button" id="copy-summary" disabled>
           <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
@@ -177,7 +178,7 @@
 
   <div class="mobile-total" id="mobile-total" aria-hidden="true" hidden>
     <div><span id="mobile-label">Total estimado</span><strong id="mobile-usd">$0.00 <small>USD</small></strong></div>
-    <div class="mobile-crc"><strong id="mobile-crc">₡0</strong><span>CRC</span></div>
+    <div class="mobile-crc"><strong id="mobile-crc">₡0.00</strong><span>CRC</span></div>
   </div>
   <div class="toast" id="toast" role="status" hidden></div>
   <dialog id="manual-copy-dialog" aria-labelledby="manual-copy-title">
